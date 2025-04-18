@@ -18,10 +18,7 @@ import {
   getDoc
 } from 'firebase/firestore';
 import { firebaseApp } from '../firebase/firebaseConfig';
-import {
-  acceptFriendRequest,
-  removeFriend,
-} from '../firebase/friendUtils';
+import { acceptFriendRequest, declineFriendRequest } from '../firebase/friendUtils';
 import { useIsFocused } from '@react-navigation/native';
 import { ArrowLeft } from 'lucide-react-native';
 
@@ -70,13 +67,13 @@ export default function FriendRequestsScreen({ navigation }) {
   };
 
   const handleDecline = async (uid) => {
-    try {
-      await removeFriend(uid, { isDecline: true }); // optional flag
-      setIncomingUsers(prev => prev.filter(u => u.uid !== uid));
-    } catch (err) {
-      Alert.alert('Error', err.message);
-    }
-  };
+      try {
+      await declineFriendRequest(uid);
+        setIncomingUsers(prev => prev.filter(u => u.uid !== uid));
+      } catch (err) {
+        Alert.alert('Error', err.message);
+      }
+    };
 
   return (
     

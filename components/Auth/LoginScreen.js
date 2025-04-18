@@ -35,6 +35,9 @@ export default function LoginScreen({ navigation }) {
         profilePic: null,
         bio: '',
         createdAt: serverTimestamp(),
+        friends:          [],     
+        incomingRequests: [],      
+        outgoingRequests: [],     
       });
     }
   };

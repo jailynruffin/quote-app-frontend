@@ -20,12 +20,6 @@ import {
     const targetRef = doc(db, 'users', targetUid);
     const currentRef = doc(db, 'users', currentUid);
   
-    await updateDoc(targetRef, {
-      incomingRequests: arrayUnion(currentUid),
-    });
-    await updateDoc(currentRef, {
-      outgoingRequests: arrayUnion(targetUid),
-    });
   };
   
   export const cancelFriendRequest = async (targetUid) => {
@@ -58,6 +52,16 @@ import {
       incomingRequests: arrayRemove(fromUid),
       friends: arrayUnion(fromUid),
     });
+    await updateDoc(targetRef, {
+      incomingRequests: arrayUnion(currentUid),
+      friends:          arrayUnion(),      // ensures field exists
+      outgoingRequests: arrayUnion(),      // "
+    });
+    await updateDoc(currentRef, {
+      outgoingRequests: arrayUnion(targetUid),
+      friends:          arrayUnion(),
+      incomingRequests: arrayUnion(),
+    });
   };
   
   export const removeFriend = async (targetUid) => {
@@ -74,4 +78,17 @@ import {
       friends: arrayRemove(targetUid),
     });
   };
+
+  export const declineFriendRequest = async (fromUid) => {
+      const me = auth.currentUser?.uid;
+      if (!me || me === fromUid) return;
+    
+      await updateDoc(doc(db, 'users', me), {
+        incomingRequests: arrayRemove(fromUid),
+      });
+      await updateDoc(doc(db, 'users', fromUid), {
+        outgoingRequests: arrayRemove(me),
+      });
+    };
+    
   
