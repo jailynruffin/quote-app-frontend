@@ -1,122 +1,164 @@
-import React, { useContext, useState, useEffect } from 'react';
-import { useIsFocused, useNavigation } from '@react-navigation/native';
+// HomePageScreen.js
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  Image,
+  View, Text, StyleSheet, ScrollView, TextInput,
+  TouchableOpacity, Image, Alert,
 } from 'react-native';
-import { QuoteContext } from '../context/QuoteContext';
 import { Heart, Star, MessageSquare, Search } from 'lucide-react-native';
 import {
   getFirestore,
   collection,
   query,
   where,
+  onSnapshot,
   getDocs,
   doc,
   getDoc,
 } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { firebaseApp } from '../firebase/firebaseConfig';
 
+/* ───────────────────────── helpers ───────────────────────── */
+function formatTimeAgo(ts) {
+  const date =
+    ts instanceof Date               ? ts :
+    ts?.toDate                       ? ts.toDate() :
+    typeof ts?.seconds === 'number'  ? new Date(ts.seconds * 1000) :
+    null;
+
+  if (!date) return '';
+  const diff = (Date.now() - date.getTime()) / 1000;
+  if (diff <   60) return 'now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return date.toLocaleDateString();
+}
+
+/* ───────────────────────── component ─────────────────────── */
 export default function HomePageScreen() {
-  const { quotes } = useContext(QuoteContext);
-  const [searchText, setSearchText] = useState('');
-  const [userResults, setUserResults] = useState([]);
-  const navigation = useNavigation();
+  const [quotes,       setQuotes]       = useState([]);
+  const [searchText,   setSearchText]   = useState('');
+  const [userResults,  setUserResults]  = useState([]);
+  const navigation                       = useNavigation();
+  const isFocused                        = useIsFocused();
 
-  const isFocused = useIsFocused();
+  /* ───────────── fetch my ID list (me + friends) ─────────── */
+  const refreshFeed = useCallback(() => {
+    let unsubscribers = [];
 
+    (async () => {
+      try {
+        const auth = getAuth(firebaseApp);
+        const db   = getFirestore(firebaseApp);
+        const me   = auth.currentUser;
+        if (!me) return;
+
+        // 1. get my friend list
+        const userSnap    = await getDoc(doc(db, 'users', me.uid));
+        const friendIds   = userSnap.exists() ? (userSnap.data().friends || []) : [];
+        const ids         = [me.uid, ...friendIds].filter(Boolean);
+
+        if (ids.length === 0) {
+          setQuotes([]);
+          return;
+        }
+
+        // 2. split into chunks of ≤10 and listen to each
+        const chunks = [];
+        while (ids.length) chunks.push(ids.splice(0, 10));
+
+        chunks.forEach(idChunk => {
+          const q = query(
+            collection(db, 'quotes'),
+            where('userId', 'in', idChunk)
+          );
+          const unsub = onSnapshot(q, snap => {
+            setQuotes(prev => {
+              const merged = [
+                ...prev.filter(q => !idChunk.includes(q.userId)),         // keep older
+                ...snap.docs.map(d => ({ id: d.id, ...d.data() })),       // add/update
+              ];
+              // sort newest → oldest
+              return merged.sort((a, b) =>
+                (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0)
+              );
+            });
+          });
+          unsubscribers.push(unsub);
+        });
+      } catch (err) {
+        console.error(err);
+        Alert.alert('Error', 'Could not load your feed.');
+      }
+    })();
+
+    // cleanup
+    return () => unsubscribers.forEach(u => u());
+  }, []);
+
+  useFocusEffect(refreshFeed);
+
+  /* ──────── user search bar (unchanged except state) ─────── */
   useEffect(() => {
     if (searchText.trim().length < 1) {
       setUserResults([]);
       return;
     }
-
-    const fetchUsers = async () => {
-      const db = getFirestore(firebaseApp);
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('searchKeywords', 'array-contains', searchText.toLowerCase()));
+    (async () => {
+      const db   = getFirestore(firebaseApp);
+      const q    = query(
+        collection(db, 'users'),
+        where('searchKeywords', 'array-contains', searchText.toLowerCase())
+      );
       const snap = await getDocs(q);
-      const matches = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setUserResults(matches);
-    };
-
-    fetchUsers();
+      setUserResults(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    })();
   }, [searchText]);
 
-
-  function formatTimeAgo(ts) {
-    // Accepts Firestore Timestamp, JS Date, or the raw seconds/nanos object
-    const date =
-      ts instanceof Date               ? ts :
-      ts?.toDate                       ? ts.toDate() :
-      typeof ts?.seconds === 'number'  ? new Date(ts.seconds * 1000) :
-      null;
-
-    if (!date) return '';
-
-    const diff = (Date.now() - date.getTime()) / 1000;   // seconds
-
-    if (diff <   60) return 'now';
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    return date.toLocaleDateString();
-  }
-
-
+  /* ───────────────────── Quote card ──────────────────────── */
   function QuoteCard({ quote }) {
-    if (typeof quote.text !== 'string') return null;
-
-    const [liked, setLiked] = useState(false);
-    const [likes, setLikes] = useState(quote.likes || 0);
+    const [liked,  setLiked]  = useState(false);
+    const [likes,  setLikes]  = useState(quote.likes || 0);
     const [poster, setPoster] = useState({ username: 'username', profilePic: '' });
 
     useEffect(() => {
-      const fetchPosterData = async () => {
-        const db = getFirestore(firebaseApp);
-        const userRef = doc(db, 'users', quote.userId);
-        const userSnap = await getDoc(userRef);
-        if (userSnap.exists()) setPoster(userSnap.data());
-      };
-      fetchPosterData();
+      (async () => {
+        const db       = getFirestore(firebaseApp);
+        const snap     = await getDoc(doc(db, 'users', quote.userId));
+        if (snap.exists()) setPoster(snap.data());
+      })();
     }, [quote.userId, isFocused]);
-
-    const handleLike = () => {
-      setLiked(!liked);
-      setLikes(likes + (liked ? -1 : 1));
-    };
 
     return (
       <View style={styles.quoteCard}>
         <Text style={styles.quoteText}>"{quote.text}"</Text>
+
         <View style={styles.userRow}>
-          {poster.profilePic ? (
-            <Image source={{ uri: poster.profilePic }} style={styles.avatar} />
-          ) : (
-            <View style={styles.avatarPlaceholder}>
-              <Text style={{ fontSize: 16 }}>👤</Text>
-            </View>
-          )}
-          <Text style={styles.username}>@{poster.username} · {formatTimeAgo(quote.timestamp)}</Text>
+          {poster.profilePic
+            ? <Image source={{ uri: poster.profilePic }} style={styles.avatar}/>
+            : <View style={styles.avatarPlaceholder}><Text>👤</Text></View>}
+          <Text style={styles.username}>
+            @{poster.username} · {formatTimeAgo(quote.timestamp)}
+          </Text>
         </View>
+
         <View style={styles.actions}>
-          <TouchableOpacity onPress={handleLike} style={styles.actionIcon}>
-            <Heart color="#e57cd8" fill={liked ? '#e57cd8' : 'none'} size={20} />
+          <TouchableOpacity onPress={() => { setLiked(!liked); setLikes(l => l + (liked ? -1 : 1)); }} style={styles.actionIcon}>
+            <Heart size={20} color="#e57cd8" fill={liked ? '#e57cd8' : 'none'} />
             <Text style={styles.iconText}>{likes}</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionIcon}><Star color="#e57cd8" size={20} /></TouchableOpacity>
-          <TouchableOpacity style={styles.actionIcon}><MessageSquare color="#e57cd8" size={20} /></TouchableOpacity>
+          <TouchableOpacity style={styles.actionIcon}><Star size={20} color="#e57cd8" /></TouchableOpacity>
+          <TouchableOpacity style={styles.actionIcon}><MessageSquare size={20} color="#e57cd8" /></TouchableOpacity>
         </View>
       </View>
     );
   }
 
+  /* ────────────────────────── UI ─────────────────────────── */
   return (
     <View style={styles.container}>
+      {/* search bar + user results */}
       <View style={styles.searchContainer}>
         <View style={styles.searchRow}>
           <Search size={18} color="#e57cd8" style={{ marginRight: 8 }} />
@@ -128,42 +170,38 @@ export default function HomePageScreen() {
             onChangeText={setSearchText}
           />
         </View>
+
         {userResults.length > 0 && (
           <View style={styles.userResults}>
-            {userResults.map(user => (
-              <TouchableOpacity
-                key={user.id}
-                onPress={() => {
-                  setSearchText('');
-                  setUserResults([]);
-                  navigation.navigate('ViewOtherProfile', { userId: user.id });
-                }}
+            {userResults.map(u => (
+              <TouchableOpacity key={u.id}
                 style={styles.userRowResult}
-              >
-                {user.profilePic ? (
-                  <Image source={{ uri: user.profilePic }} style={styles.avatarSmall} />
-                ) : (
-                  <View style={styles.avatarPlaceholderSmall}><Text>👤</Text></View>
-                )}
+                onPress={() => {
+                  setSearchText(''); setUserResults([]);
+                  navigation.navigate('ViewOtherProfile', { userId: u.id });
+                }}>
+                {u.profilePic
+                  ? <Image source={{ uri: u.profilePic }} style={styles.avatarSmall}/>
+                  : <View style={styles.avatarPlaceholderSmall}><Text>👤</Text></View>}
                 <View>
-                  <Text style={{ fontWeight: '500' }}>{user.name}</Text>
-                  <Text style={{ color: '#888' }}>@{user.username}</Text>
+                  <Text style={{ fontWeight: '500' }}>{u.name}</Text>
+                  <Text style={{ color: '#888' }}>@{u.username}</Text>
                 </View>
               </TouchableOpacity>
             ))}
           </View>
         )}
+
         <View style={styles.divider} />
       </View>
 
+      {/* feed */}
       <ScrollView contentContainerStyle={styles.feed}>
-        {quotes.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Your feed is empty. Follow friends or add quotes to get started!</Text>
-          </View>
-        ) : (
-          quotes.map(q => <QuoteCard key={q.id} quote={q} />)
-        )}
+        {quotes.length === 0
+          ? <View style={styles.emptyState}><Text style={styles.emptyText}>
+              Your feed is empty. Follow friends or add quotes to get started!
+            </Text></View>
+          : quotes.map(q => <QuoteCard key={q.id} quote={q}/>)}
       </ScrollView>
     </View>
   );
