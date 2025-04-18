@@ -5,6 +5,7 @@ import AddQuoteScreen from '../AddQuotes/AddQuoteScreen'
 import ProfileScreen from '../Profile/ProfileScreen'
 import CustomTabBar from './CustomTabBar'
 import EditProfileScreen from '../Profile/EditProfileScreen.js'
+import ViewOtherProfileScreen from '../Profile/ViewOtherProfileScreen';
 
 const Placeholder = () => null
 

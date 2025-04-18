@@ -1,40 +1,61 @@
-import React, { useState } from 'react'
+// auth/LoginScreen.js
+import React, { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet, Alert
-} from 'react-native'
-import { Circle } from 'lucide-react-native'
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth'
-import { firebaseApp } from '../firebase/firebaseConfig'
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+} from 'react-native';
+import { Circle } from 'lucide-react-native';
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { firebaseApp } from '../firebase/firebaseConfig';
 
 export default function LoginScreen({ navigation }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
+
+  // create a profile document if it doesn’t exist yet
+  const ensureProfile = async (user) => {
+    const db  = getFirestore(firebaseApp);
+    const ref = doc(db, 'users', user.uid);
+
+    if (!(await getDoc(ref)).exists()) {
+      await setDoc(ref, {
+        email: user.email,
+        username: user.displayName ?? user.email.split('@')[0],
+        profilePic: null,
+        bio: '',
+        createdAt: serverTimestamp(),
+      });
+    }
+  };
 
   const handleLogin = async () => {
-    const auth = getAuth(firebaseApp)
-
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
+      const auth = getAuth(firebaseApp);
+      const cred = await signInWithEmailAndPassword(auth, email, password);
+      await ensureProfile(cred.user);
 
-      if (!user.emailVerified) {
-        Alert.alert('Email not verified', 'Please verify your email before logging in.')
-        await auth.signOut()
-        return
-      }
-
-      Alert.alert('Success!', 'You’re now logged in.')
-      navigation.navigate('Home')
+      navigation.replace('AppTabs');   // or whatever your main navigator is
     } catch (err) {
-      Alert.alert('Login failed', err.message)
+      Alert.alert('Login failed', err.message);
     }
-  }
+  };
 
+  /* ───────────── UI ───────────── */
   return (
     <View style={styles.container}>
       <Circle color="#e57cd8" size={70} style={{ marginBottom: 40 }} />
-
-      <Text style={styles.header}>Log In</Text>
+      <Text style={styles.header}>Log In</Text>
 
       <TextInput
         placeholder="Email"
@@ -54,14 +75,14 @@ export default function LoginScreen({ navigation }) {
       />
 
       <TouchableOpacity style={styles.button} onPress={handleLogin}>
-        <Text style={styles.buttonText}>Login</Text>
+        <Text style={styles.buttonText}>Log In</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
-        <Text style={styles.link}>Don’t have an account? Sign up</Text>
+        <Text style={styles.link}>Need an account? Sign up</Text>
       </TouchableOpacity>
     </View>
-  )
+  );
 }
 
 const styles = StyleSheet.create({

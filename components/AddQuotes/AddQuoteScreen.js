@@ -48,6 +48,9 @@ export default function AddQuoteScreen({ navigation }) {
       const docRef = await addDoc(collection(db, 'quotes'), newQuote)
 
       // Add to context for immediate feedback
+      console.log('handleSubmit → sending', {
+        ...newQuote, id: 'X', time: Date.now()
+      });
       addQuote({ ...newQuote, id: docRef.id, timestamp: new Date() })
 
       setQuote('')

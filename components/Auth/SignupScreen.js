@@ -1,4 +1,6 @@
-import React, { useState } from 'react'
+// auth/SignupScreen.js
+import { createSearchKeywords } from '../utils/searchUtils';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,71 +8,88 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-} from 'react-native'
-import { Circle } from 'lucide-react-native'
+} from 'react-native';
+import { Circle } from 'lucide-react-native';
 import {
   getAuth,
   createUserWithEmailAndPassword,
   sendEmailVerification,
-  signOut
-} from 'firebase/auth'
-import { getFirestore, doc, setDoc, serverTimestamp } from 'firebase/firestore'
-import { firebaseApp } from '../firebase/firebaseConfig'
+  updateProfile,
+  signOut,
+} from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { firebaseApp } from '../firebase/firebaseConfig';
 
 export default function SignupScreen({ navigation }) {
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [username, setUsername] = useState('');
+  const [email, setEmail]       = useState('');
+  const [password, setPassword] = useState('');
 
   const handleSignup = async () => {
-    const auth = getAuth(firebaseApp)
-    const db = getFirestore(firebaseApp)
-
+    const searchKeywords = createSearchKeywords(username.trim(), username.trim());
     if (!username.trim() || !email.trim() || !password.trim()) {
-      Alert.alert('Missing info', 'Please fill in all fields.')
-      return
+      Alert.alert('Missing info', 'Please fill in all fields.');
+      return;
     }
 
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user
+      const auth = getAuth(firebaseApp);
+      const db   = getFirestore(firebaseApp);
 
-      // Add user to Firestore
+      // 1. Create the Firebase Auth account
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      const user = cred.user;
+
+      // 2. Give the account a displayName (so we can reuse later)
+      await updateProfile(user, { displayName: username.trim() });
+
+      // 3. Create the matching Firestore profile
       await setDoc(
         doc(db, 'users', user.uid),
         {
           email: user.email,
           username: username.trim(),
-          profilePic: '',
+          profilePic: null,
           bio: '',
           createdAt: serverTimestamp(),
+          friends: [],
+          incomingRequests: [],
+          outgoingRequests: [],
+          searchKeywords,
         },
         { merge: true }
-      )
+      );
 
-      // Attempt to send verification
+      // 4. Send the verification email (non‑fatal if it fails)
       try {
-        await sendEmailVerification(user)
-      } catch (verificationError) {
-        console.warn('Email verification failed:', verificationError.message)
+        await sendEmailVerification(user);
+      } catch (e) {
+        console.warn('Email verification failed:', e.message);
       }
 
-      await signOut(auth)
+      // 5. Log them out until they verify
+      await signOut(auth);
 
       Alert.alert(
         'Account created!',
         'Check your inbox to verify your email before logging in.'
-      )
-      navigation.navigate('Login')
+      );
+      navigation.navigate('Login');
     } catch (err) {
-      Alert.alert('Signup failed', err.message)
+      Alert.alert('Signup failed', err.message);
     }
-  }
+  };
 
+  /* ───────────── UI ───────────── */
   return (
     <View style={styles.container}>
       <Circle color="#e57cd8" size={70} style={{ marginBottom: 40 }} />
-      <Text style={styles.header}>Sign Up</Text>
+      <Text style={styles.header}>Sign Up</Text>
 
       <TextInput
         placeholder="Username"
@@ -98,14 +117,14 @@ export default function SignupScreen({ navigation }) {
       />
 
       <TouchableOpacity style={styles.button} onPress={handleSignup}>
-        <Text style={styles.buttonText}>Sign Up</Text>
+        <Text style={styles.buttonText}>Sign Up</Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-        <Text style={styles.link}>Already have an account? Log in</Text>
+        <Text style={styles.link}>Already have an account? Log in</Text>
       </TouchableOpacity>
     </View>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
