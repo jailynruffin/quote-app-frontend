@@ -1,4 +1,4 @@
-// ViewOtherProfileScreen.js 
+// screens/ViewOtherProfileScreen.js
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity,
@@ -15,14 +15,14 @@ import {
   sendFriendRequest, cancelFriendRequest,
   acceptFriendRequest, removeFriend,
 } from '../firebase/friendUtils';
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, X as XIcon } from 'lucide-react-native';
 
 export default function ViewOtherProfileScreen() {
-  const { userId } = useRoute().params;
-  const nav = useNavigation();
-  const auth = getAuth(firebaseApp);
-  const db   = getFirestore(firebaseApp);
-  const me   = auth.currentUser?.uid;
+  const { userId }   = useRoute().params;
+  const nav          = useNavigation();
+  const auth         = getAuth(firebaseApp);
+  const db           = getFirestore(firebaseApp);
+  const me           = auth.currentUser?.uid;
 
   const [user,   setUser]   = useState(null);
   const [quotes, setQuotes] = useState([]);
@@ -35,12 +35,12 @@ export default function ViewOtherProfileScreen() {
       const data = snap.data();
       setUser(data);
 
-      if (data.friends?.includes(me))                 setStatus('friends');
-      else if (data.incomingRequests?.includes(me))   setStatus('pendingIncoming');
-      else if (data.outgoingRequests?.includes(me))   setStatus('pendingOutgoing');
-      else                                            setStatus('none');
+      if (data.friends?.includes(me))               setStatus('friends');
+      else if (data.incomingRequests?.includes(me)) setStatus('pendingOutgoing');
+      else if (data.outgoingRequests?.includes(me)) setStatus('pendingIncoming');
+      else                                          setStatus('none');
     });
-    return () => unsub();
+    return unsub;
   }, [userId]);
 
   /* refresh quotes if we become friends */
@@ -48,8 +48,9 @@ export default function ViewOtherProfileScreen() {
     if (status !== 'friends' && me !== userId) { setQuotes([]); return; }
 
     (async () => {
-      const q    = query(collection(db, 'quotes'), where('userId','==', userId));
-      const snap = await getDocs(q);
+      const snap = await getDocs(
+        query(collection(db, 'quotes'), where('userId','==', userId))
+      );
       setQuotes(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     })();
   }, [status, userId]);
@@ -57,11 +58,29 @@ export default function ViewOtherProfileScreen() {
   /* single action handler */
   const handleAction = async () => {
     try {
-      if (status === 'none')             await sendFriendRequest(userId);
+      // special: removing a friend needs confirmation
+      if (status === 'friends') {
+        const sure = await new Promise(res =>
+          Alert.alert(
+            'Remove friend?',
+            `Are you sure you want to remove @${user.username}?`,
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => res(false) },
+              { text: 'Remove', style: 'destructive', onPress: () => res(true) },
+            ]
+          ));
+        if (!sure) return;
+      }
+
+      setStatus('loading');
+
+      if (status === 'none')               await sendFriendRequest(userId);
       else if (status === 'pendingOutgoing') await cancelFriendRequest(userId);
       else if (status === 'pendingIncoming') await acceptFriendRequest(userId);
       else if (status === 'friends')         await removeFriend(userId);
-    } catch (err) { Alert.alert('Error', err.message); }
+    } catch (err) {
+      Alert.alert('Error', err.message);
+    }
   };
 
   const actionLabel = {
@@ -89,23 +108,35 @@ export default function ViewOtherProfileScreen() {
 
       <Text style={styles.username}>@{user.username}</Text>
       {user.bio ? <Text style={styles.bio}>{user.bio}</Text> : null}
-
       <Text style={styles.friendCount}>👥 {user.friends?.length || 0} friends</Text>
 
+      {/* action button + red/pink X overlay */}
       {me !== userId && (
-        <TouchableOpacity
-          style={[
-            styles.actionBtn,
-            status!=='none' && status!=='pendingIncoming' && { opacity:0.5 },
-          ]}
-          onPress={handleAction}
-          disabled={status==='loading'}
-        >
-          <Text style={styles.actionTxt}>{actionLabel}</Text>
-        </TouchableOpacity>
+        <View style={{ position:'relative', marginTop:12 }}>
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              status!=='none' && status!=='pendingIncoming' && { opacity:0.5 },
+            ]}
+            onPress={handleAction}
+            disabled={status==='loading'}
+          >
+            <Text style={styles.actionTxt}>{actionLabel}</Text>
+          </TouchableOpacity>
+
+          {status === 'friends' && (
+            <TouchableOpacity
+              onPress={handleAction}
+              style={styles.removeX}
+              disabled={status==='loading'}
+            >
+              <XIcon size={18} color="#ff4d9c" />
+            </TouchableOpacity>
+          )}
+        </View>
       )}
 
-      {/* quotes (visible only when friends or viewing yourself) */}
+      {/* quotes */}
       {quotes.length > 0 && (
         <View style={styles.quotesSection}>
           <Text style={styles.qHeader}>Quotes</Text>
@@ -131,8 +162,16 @@ const styles = StyleSheet.create({
   bio:{ fontSize:14, color:'#888', textAlign:'center', marginTop:4 },
   friendCount:{ fontSize:14, color:'#888', marginTop:4 },
   actionBtn:{ backgroundColor:'#e57cd8', paddingVertical:10, paddingHorizontal:24,
-              borderRadius:20, marginTop:12 },
+              borderRadius:20 },
   actionTxt:{ color:'#fff', fontWeight:'600' },
+  removeX:{            /* ► pink X overlay ◄ */
+    position:'absolute',
+    right:-10, top:-10,
+    backgroundColor:'#fff',
+    borderRadius:14,
+    padding:2,
+    elevation:4,
+  },
   quotesSection:{ width:'100%', marginTop:30, paddingHorizontal:24 },
   qHeader:{ fontSize:16, fontWeight:'600', marginBottom:10 },
   quoteCard:{ backgroundColor:'#f7f7f7', padding:14, borderRadius:10, marginBottom:10 },

@@ -5,6 +5,7 @@ import AppTabs from './AppTabs'
 import EditProfileScreen from '../Profile/EditProfileScreen'
 import ViewOtherProfileScreen from '../Profile/ViewOtherProfileScreen';
 import FriendRequestsScreen from '../Profile/FriendRequestsScreen';
+import QuoteLikesScreen from '../HomePage/QuoteLikesScreen';
 
 
 
@@ -17,7 +18,7 @@ export default function MainStack() {
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="ViewOtherProfile" component={ViewOtherProfileScreen} options={{ headerShown: false }}/>
       <Stack.Screen name="FriendRequests" component={FriendRequestsScreen} options={{ headerShown: false }}/>
-
+      <Stack.Screen name="QuoteLikes" component={QuoteLikesScreen} options={{ headerShown:false }} />
     </Stack.Navigator>
   )
 }
